@@ -2,6 +2,11 @@
 
 #include <QObject>
 #include <QStringList>
+#include <QUdpSocket>
+#include <QTimer>
+#include <QDataStream>
+#include <QHostAddress>
+#include <QThread>
 
 namespace CastIt
 {
@@ -10,18 +15,41 @@ namespace CastIt
 	{
 		Q_OBJECT
 
-
 	public:
-		// Note to self: explicit is use to prevent implicit converstion, must provide the correct data type for its parameters
 		explicit DeviceDiscovery(QObject* parent = nullptr); 
 		~DeviceDiscovery() override;
 
-		void startDiscovery(); // Starts mDNS discovery
+		void startDiscovery();
 
 	signals:
-		void devicesUpdated(const QStringList& devices); // Emits updated device list
+		void devicesUpdated(const QStringList& devices);
+		void discoveryError(const QString& errorMessage);
+
+	private slots:
+		void sendQuery();
+		void processResponse();
 
 	private:
-		void simulateDiscovery(); // Mock mDNS for testing
+		// Network setup methods
+		void printNetworkInterfaces();
+		void joinMulticastGroups();
+		QHostAddress getLocalAddress();
+		
+		// DNS packet encoding/decoding methods
+		void sendMdnsQuery(const QString& serviceType);
+		void encodeDnsName(QDataStream& stream, const QString& name);
+		void parseDnsResponse(const QByteArray& data, const QHostAddress& sender);
+		QString readDnsName(QDataStream& stream, const QByteArray& packet);
+		void skipDnsName(QDataStream& stream, const QByteArray& packet);
+		
+		// Helper methods for device identification
+		bool isCastingService(const QString& name, const QString& serviceName) const;
+		QString extractDeviceName(const QString& serviceName) const;
+
+		// Member variables
+		QUdpSocket* udpSocket;
+		QTimer* queryTimer;
+		QStringList discoveredDevices;
+		int queryCount = 0;
 	};
 }

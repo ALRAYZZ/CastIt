@@ -13,7 +13,8 @@ set(CMAKE_AUTORCC ON)
 
 # Optional but recommended for Qt projects
 include(GNUInstallDirs)
-find_package(Qt6 COMPONENTS Widgets REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Network REQUIRED)
+
 qt_standard_project_setup()
 
 qt_add_executable(CastIt 
@@ -25,8 +26,25 @@ qt_add_executable(CastIt
 	src/core/device_discovery.h
 )
 
+set(QT_BIN_DIR "D:/.CODING/QtFramework/6.9.1/msvc2022_64/bin")
+
+add_custom_command(TARGET CastIt POST_BUILD
+    COMMAND "${QT_BIN_DIR}/windeployqt.exe"
+        $<$<CONFIG:Debug>:--debug>
+        $<$<CONFIG:Release>:--release>
+        --no-translations
+        "$<TARGET_FILE:CastIt>"
+    COMMENT "Deploying Qt dependencies..."
+)
+
 # Link againts Qt
-target_link_libraries(CastIt PRIVATE Qt6::Widgets)
+target_link_libraries(CastIt PRIVATE 
+	Qt6::Widgets
+	Qt6::Network
+)
 
 # Add your include directories (both source and generated)
-target_include_directories(CastIt PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(CastIt PRIVATE
+	src 
+	${CMAKE_CURRENT_BINARY_DIR}
+)
