@@ -10,46 +10,42 @@
 
 namespace CastIt
 {
+    class DeviceDiscovery : public QObject
+    {
+        Q_OBJECT
+    public:
+        explicit DeviceDiscovery(QObject* parent = nullptr);
+        ~DeviceDiscovery();
 
-	class DeviceDiscovery : public QObject
-	{
-		Q_OBJECT
+        void startDiscovery();
+        void stopDiscovery();
 
-	public:
-		explicit DeviceDiscovery(QObject* parent = nullptr); 
-		~DeviceDiscovery() override;
+    signals:
+        void devicesUpdated(const QStringList& devices);
+        void discoveryError(const QString& error);
 
-		void startDiscovery();
+    private slots:
+        void sendQuery();
+        void processResponse();
 
-	signals:
-		void devicesUpdated(const QStringList& devices);
-		void discoveryError(const QString& errorMessage);
+		// Make them slots so QTimer::singleShot can invoke them
+        void sendServiceQueriesWithDelay(const QStringList& list, int index);
+        void sendInstanceQueriesWithDelay(int index);
 
-	private slots:
-		void sendQuery();
-		void processResponse();
+    private:
+        QUdpSocket* udpSocket;
+        QTimer* queryTimer;
+        QThread* discoveryThread;
+        QStringList discoveredDevices;
 
-	private:
-		// Network setup methods
-		void printNetworkInterfaces();
-		void joinMulticastGroups();
-		QHostAddress getLocalAddress();
-		
-		// DNS packet encoding/decoding methods
-		void sendMdnsQuery(const QString& serviceType);
-		void encodeDnsName(QDataStream& stream, const QString& name);
-		void parseDnsResponse(const QByteArray& data, const QHostAddress& sender);
-		QString readDnsName(QDataStream& stream, const QByteArray& packet);
-		void skipDnsName(QDataStream& stream, const QByteArray& packet);
-		
-		// Helper methods for device identification
-		bool isCastingService(const QString& name, const QString& serviceName) const;
-		QString extractDeviceName(const QString& serviceName) const;
+        void sendMdnsQuery(const QString& serviceType, quint16 qtype = 12); // Default PTR
+        void parseDnsResponse(const QByteArray& data, const QHostAddress& sender);
 
-		// Member variables
-		QUdpSocket* udpSocket;
-		QTimer* queryTimer;
-		QStringList discoveredDevices;
-		int queryCount = 0;
-	};
+
+        void joinMulticastGroups();
+        void printNetworkInterfaces();
+        QHostAddress getLocalAddress() const;
+        bool isCastingService(const QString& name, const QString& serviceName) const;
+        QString extractDeviceName(const QString& serviceName) const;
+    };
 }
