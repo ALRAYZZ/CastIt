@@ -11,6 +11,9 @@ namespace CastIt
 		setWindowTitle("CastIt Media Casting App");
 		resize(500, 400);
 		initializeDiscovery();
+		dlnaDiscovery = new DlnaDiscovery(this);
+		dlnaDiscovery->startDiscovery(); // Start DLNA discovery
+		dlnaController = new DlnaController(this);
 
 		// Connect button signals
 		connect(ui->selectMediaButton, &QPushButton::clicked, this, &MainWindow::onSelectedMediaButtonClicked);
@@ -18,6 +21,20 @@ namespace CastIt
 		connect(ui->pauseButton, &QPushButton::clicked, this, &MainWindow::onPauseButtonClicked);
 		connect(ui->stopButton, &QPushButton::clicked, this, &MainWindow::onStopButtonClicked);
 		connect(ui->deviceList, &QListWidget::itemSelectionChanged, this, &MainWindow::onDeviceSelectionChanged);
+		connect(dlnaDiscovery, &DlnaDiscovery::renderersUpdated, this, &MainWindow::onRenderersUpdated);
+		connect(dlnaDiscovery, &DlnaDiscovery::rendererUrlsUpdated, this, &MainWindow::onRendererUrlsUpdated);
+
+		castController = new CastController(this);
+		connect(castController, &CastController::castingStatus, this, [](const QString& status)
+			{
+				qDebug() << "Casting status:" << status;
+			});
+		connect(castController, &CastController::castingError, this, [](const QString& error)
+			{
+				qDebug() << "Casting error:" << error;
+			});
+		connect(deviceDiscovery, &DeviceDiscovery::deviceIpsUpdated, this, &MainWindow::onDeviceIpsUpdated);
+
 	}
 
 	MainWindow::~MainWindow()
@@ -48,23 +65,48 @@ namespace CastIt
 			qDebug() << "Selected media file:" << selectedMediaPath;
 		}
 	}
+
+	void MainWindow::onRenderersUpdated(const QStringList& renderers)
+	{
+		for (const QString& renderer : renderers)
+		{
+			ui->deviceList->addItem("DLNA: " + renderer);
+		}
+	}
+
+	void MainWindow::onRendererUrlsUpdated(const QMap<QString, QString>& urls)
+	{
+		dlnaUrls = urls;
+	}
 	
 	void MainWindow::onPlayButtonClicked()
 	{
-		// Getting the string name of the selected device
 		QString selectedDevice = ui->deviceList->currentItem() ? ui->deviceList->currentItem()->text() : "None";
-		if (selectedMediaPath.isEmpty())
+		if (selectedMediaPath.isEmpty() || selectedDevice == "None")
 		{
-			qDebug() << "Play requested but no media file selected";
+			qDebug() << "No media or device selected";
+			return;
 		}
-		else if (selectedDevice == "None")
+
+		QHostAddress ip = deviceIps.value(selectedDevice);
+		if (ip.isNull())
 		{
-			qDebug() << "Play requested but no device selected";
+			qDebug() << "No IP for selected device";
+			return;
 		}
-		else
+		if (selectedDevice.startsWith("DLNA: "))
 		{
-			qDebug() << "Play requested for device:" << selectedDevice << "with media:" << selectedMediaPath;
+			selectedDeviceType = "DLNA";
+			QString rendererName = selectedDevice.mid(6); // Remove "DLNA: " prefix
+			QString controlUrl = dlnaUrls[rendererName];
+			dlnaController->castMedia(controlUrl, selectedMediaPath);
 		}
+		else if (selectedDevice.startsWith("Chromecast: "))
+		{
+			castController->startMediaServer(selectedMediaPath);
+			castController->castMedia(ip, castController->getLocalUrl()); // Local URL from server
+		}
+
 	}
 
 	void MainWindow::onPauseButtonClicked()
@@ -83,5 +125,10 @@ namespace CastIt
 	{
 		QString selectedDevice = ui->deviceList->currentItem() ? ui->deviceList->currentItem()->text() : "None";
 		qDebug() << "Device selected: " << selectedDevice;
+	}
+
+	void MainWindow::onDeviceIpsUpdated(const QMap<QString, QHostAddress>& ips)
+	{
+		deviceIps = ips;
 	}
 }

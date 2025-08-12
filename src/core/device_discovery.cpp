@@ -15,51 +15,16 @@ namespace CastIt
 
     DeviceDiscovery::DeviceDiscovery(QObject* parent)
         : QObject(parent),
-        udpSocket(new QUdpSocket(this)),
-        queryTimer(new QTimer(this)),
+        udpSocket(new QUdpSocket()),
+        queryTimer(new QTimer()),
         discoveryThread(new QThread(this))
     {
-        moveToThread(discoveryThread);
+        udpSocket->moveToThread(discoveryThread);
+        queryTimer->moveToThread(discoveryThread);
 
-        connect(discoveryThread, &QThread::started, [this]()
-            {
-                printNetworkInterfaces();
-
-                if (!udpSocket->bind(QHostAddress::AnyIPv4, 5353,
-                    QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint))
-                {
-                    QString errorMessage = "Failed to bind UDP socket for mDNS: " + udpSocket->errorString();
-                    qDebug() << errorMessage;
-                    emit discoveryError(errorMessage);
-                    return;
-                }
-
-                udpSocket->setSocketOption(QAbstractSocket::MulticastTtlOption,
-                    QVariant::fromValue<quint32>(255));
-                udpSocket->setSocketOption(QAbstractSocket::MulticastLoopbackOption,
-                    QVariant::fromValue<bool>(true));
-
-                QHostAddress local = getLocalAddress();
-                if (!local.isNull() && local != QHostAddress::LocalHost) {
-                    QList<QNetworkInterface> ifs = QNetworkInterface::allInterfaces();
-                    for (const QNetworkInterface& iface : ifs) {
-                        for (const QNetworkAddressEntry& entry : iface.addressEntries()) {
-                            if (entry.ip() == local) {
-                                udpSocket->setMulticastInterface(iface);
-                                qDebug() << "Set multicast interface to" << iface.name();
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                joinMulticastGroups();
-
-                connect(udpSocket, &QUdpSocket::readyRead, this, &DeviceDiscovery::processResponse);
-                connect(queryTimer, &QTimer::timeout, this, &DeviceDiscovery::sendQuery);
-
-                qDebug() << "DeviceDiscovery initialized successfully";
-            });
+        connect(discoveryThread, &QThread::started, this, &DeviceDiscovery::onDiscoveryThreadStarted);
+        connect(queryTimer, &QTimer::timeout, this, &DeviceDiscovery::sendQuery);
+        connect(udpSocket, &QUdpSocket::readyRead, this, &DeviceDiscovery::processResponse);
     }
 
     DeviceDiscovery::~DeviceDiscovery()
@@ -67,16 +32,53 @@ namespace CastIt
         stopDiscovery();
     }
 
+    void DeviceDiscovery::onDiscoveryThreadStarted()
+    {
+        printNetworkInterfaces();
+
+        if (!udpSocket->bind(QHostAddress::AnyIPv4, 5353,
+            QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint))
+        {
+            QString errorMessage = "Failed to bind UDP socket for mDNS: " + udpSocket->errorString();
+            qDebug() << errorMessage;
+            emit discoveryError(errorMessage);
+            return;
+        }
+
+        udpSocket->setSocketOption(QAbstractSocket::MulticastTtlOption,
+            QVariant::fromValue<quint32>(255));
+        udpSocket->setSocketOption(QAbstractSocket::MulticastLoopbackOption,
+            QVariant::fromValue<bool>(true));
+
+        QHostAddress local = getLocalAddress();
+        if (!local.isNull() && local != QHostAddress::LocalHost) {
+            QList<QNetworkInterface> ifs = QNetworkInterface::allInterfaces();
+            for (const QNetworkInterface& iface : ifs) {
+                for (const QNetworkAddressEntry& entry : iface.addressEntries()) {
+                    if (entry.ip() == local) {
+                        udpSocket->setMulticastInterface(iface);
+                        qDebug() << "Set multicast interface to" << iface.name();
+                        break;
+                    }
+                }
+            }
+        }
+
+        joinMulticastGroups();
+
+        qDebug() << "DeviceDiscovery initialized successfully";
+    }
+
     void DeviceDiscovery::startDiscovery()
     {
         discoveryThread->start();
-        queryTimer->start(2000);
+        QMetaObject::invokeMethod(queryTimer, "start", Q_ARG(int, 2000));
     }
 
     void DeviceDiscovery::stopDiscovery()
     {
-        queryTimer->stop();
         if (discoveryThread->isRunning()) {
+            QMetaObject::invokeMethod(queryTimer, "stop");
             discoveryThread->quit();
             discoveryThread->wait();
         }
@@ -225,16 +227,19 @@ namespace CastIt
 
             if (type == 12) { // PTR
                 QString serviceName = readDnsName(stream, data);
-                qDebug() << "PTR ->" << serviceName;
-                if (isCastingService(name, serviceName)) {
+                qDebug() << "PTR record points to:" << serviceName;
+
+                if (isCastingService(name, serviceName))
+                {
                     QString deviceName = extractDeviceName(serviceName);
-                    if (!deviceName.isEmpty() && !discoveredDevices.contains(deviceName)) {
+                    if (!deviceName.isEmpty() && !discoveredDevices.contains(deviceName))
+                    {
                         discoveredDevices.append(deviceName);
-                        qDebug() << "*** Device:" << deviceName << "at" << sender.toString();
+                        deviceIps[deviceName] = sender;  // Store IP with name
+                        qDebug() << "*** DISCOVERED CASTING DEVICE:" << deviceName << "at" << sender.toString();
                         emit devicesUpdated(discoveredDevices);
+                        emit deviceIpsUpdated(deviceIps);  // Emit IP map
                     }
-                    sendMdnsQuery(serviceName, 33);
-                    sendMdnsQuery(serviceName, 16);
                 }
             }
             else if (type == 33) { // SRV
@@ -272,7 +277,9 @@ namespace CastIt
             else {
                 stream.skipRawData(rdlength);
             }
+
         }
+
     }
 
     void DeviceDiscovery::printNetworkInterfaces()
@@ -328,7 +335,5 @@ namespace CastIt
         }
         return QString();
     }
-
-
 
 } // namespace CastIt

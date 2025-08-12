@@ -13,7 +13,7 @@ set(CMAKE_AUTORCC ON)
 
 # Optional but recommended for Qt projects
 include(GNUInstallDirs)
-find_package(Qt6 COMPONENTS Widgets Network REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Network WebSockets HttpServer REQUIRED)
 
 qt_standard_project_setup()
 
@@ -24,6 +24,12 @@ qt_add_executable(CastIt
 	src/ui/main_window.ui
 	src/core/device_discovery.cpp
 	src/core/device_discovery.h
+	src/core/cast_controller.cpp
+	src/core/cast_controller.h
+	src/core/dlna_controller.cpp
+	src/core/dlna_controller.h
+	src/core/dlna_discovery.cpp
+	src/core/dlna_discovery.h
 )
 
 set(QT_BIN_DIR "D:/.CODING/QtFramework/6.9.1/msvc2022_64/bin")
@@ -41,6 +47,8 @@ add_custom_command(TARGET CastIt POST_BUILD
 target_link_libraries(CastIt PRIVATE 
 	Qt6::Widgets
 	Qt6::Network
+	Qt6::WebSockets
+	Qt6::HttpServer
 )
 
 # Add your include directories (both source and generated)

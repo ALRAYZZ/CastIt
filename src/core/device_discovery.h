@@ -7,6 +7,7 @@
 #include <QDataStream>
 #include <QHostAddress>
 #include <QThread>
+#include <QMap>
 
 namespace CastIt
 {
@@ -23,8 +24,10 @@ namespace CastIt
     signals:
         void devicesUpdated(const QStringList& devices);
         void discoveryError(const QString& error);
+        void deviceIpsUpdated(const QMap<QString, QHostAddress>& deviceIps);
 
     private slots:
+        void onDiscoveryThreadStarted();
         void sendQuery();
         void processResponse();
 
@@ -37,6 +40,7 @@ namespace CastIt
         QTimer* queryTimer;
         QThread* discoveryThread;
         QStringList discoveredDevices;
+        QMap<QString, QHostAddress> deviceIps;
 
         void sendMdnsQuery(const QString& serviceType, quint16 qtype = 12); // Default PTR
         void parseDnsResponse(const QByteArray& data, const QHostAddress& sender);
